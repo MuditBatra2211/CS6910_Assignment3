@@ -1,0 +1,111 @@
+import tensorflow as tf
+
+physical_devices = tf.config.experimental.list_physical_devices('GPU')
+# assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+# config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+from tensorflow.keras import  models, optimizers, layers, activations
+from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.layers import Input, LSTM, SimpleRNN, GRU, Dense, Embedding,RNN
+import matplotlib.pyplot as plt
+import numpy as np
+import codecs
+%pip install wandb -q
+import wandb
+from wandb.keras import WandbCallback
+#==================================================================================================#
+import wandb
+wandb.login()
+default_configs = {"architecture" : "LSTM",
+                   "batchSize" : 32,
+                   "dropout" : 0.2,
+                   "epochs" : 10,
+                   "encoderLayers" : 2,
+                   "decoderLayers" : 1,
+                   "hiddenSize" : 64,
+                   "embeddingSize" : 32}
+run = wandb.init(project='CS6910_assignment3_v1', config=default_configs)
+config = wandb.config
+
+#==================================================================================================#
+
+class NLP:
+    xTrain = []
+    yTrain = []
+    xValid = []
+    yValid = []
+    xTest = []
+    yTest =[]
+    
+    def __init__(self):
+
+        self.trainingExamples = len(self.xTrain)
+        self.validExamples = len(self.xValid)
+
+        self.architecture = config.architecture
+        self.batchSize = config.batchSize
+        self.dropout = config.dropout
+        self.epochs = config.epochs
+
+        self.encoderLayers = config.encoderLayers
+        self.decoderLayers = config.decoderLayers
+        self.hiddenSize = config.hiddenSize
+        self.embeddingSize = config.embeddingSize
+
+
+    def getDictionary(self):
+        
+        enText = self.xTrain
+        hiText = self.yTrain
+
+        self.charText_hi = set(''.join(hiText))
+        self.charText_hi.add(' ')
+        self.charText_en = set(''.join(enText))
+        self.charText_en.add(' ')
+
+        self.int2char_hi = dict(enumerate(self.charText_hi))
+        self.int2char_en = dict(enumerate(self.charText_en))
+
+        self.char2int_hi = {char: ind for ind, char in self.int2char_hi.items()}
+        self.char2int_en = {char: ind for ind, char in self.int2char_en.items()}
+
+        self.vocabSize_hi = len(self.int2char_hi)
+        self.vocabSize_en = len(self.int2char_en)
+
+        self.inTrainMaxlen = len(max(self.xTrain, key=len))
+        self.outTrainMaxlen = len(max(self.yTrain, key=len))
+
+    def word2vec(self,dataset):
+        
+        if (dataset == 'train'):
+            enText = self.xTrain
+            hiText = self.yTrain
+
+        elif(dataset == 'valid'):
+            enText = self.xValid
+            hiText = self.yValid 
+        else:
+            enText = self.xTest
+            hiText = self.yTest
+
+        
+        self.encoderInput = np.zeros((len(enText), self.inTrainMaxlen), dtype="float32")
+        self.decoderInput = np.zeros((len(hiText), self.outTrainMaxlen, self.vocabSize_hi), dtype="float32")
+        self.decoderOutput = np.zeros((len(hiText), self.outTrainMaxlen, self.vocabSize_hi), dtype="float32")
+
+        for i, (x, y) in enumerate(zip(enText, hiText)):
+            for t, char in enumerate(x):
+                self.encoderInput[i, t] = self.char2int_en[char]
+                
+            self.encoderInput[i, t + 1 :] = self.char2int_en[" "]
+
+            for t, char in enumerate(y):
+                # decoder_target_data is ahead of decoder_input_data by one timestep
+                self.decoderInput[i, t, self.char2int_hi[char]] = 1.0
+                if t > 0:
+                    self.decoderOutput[i, t - 1, self.char2int_hi[char]] = 1.0
+                    
+            self.decoderInput[i, t + 1 :, self.char2int_hi[" "]] = 1.0
+            self.decoderOutput[i, t:, self.char2int_hi[" "]] = 1.0  
+
+#====================================================================================================================#
