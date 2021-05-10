@@ -191,3 +191,111 @@ def train():
         model = Model([encoderInputs, decoderInputs], decoderOutputs)
         return model
 #=========================================================================================================================================================#
+# Creating Object  
+  NLP = NLP()
+  if (NLP.isAttention == False):
+    wandb.run.name = str(NLP.architecture)+"_el"+str(NLP.encoderLayers)+"_dl"+str(NLP.decoderLayers)+"_embedSize"+str(NLP.embeddingSize)+"_hs"+str(NLP.hiddenSize)+"_dropout"+str(NLP.dropout)+"_bs"+str(NLP.batchSize)+"_"+str(NLP.optimizer)
+  else:
+    wandb.run.name = "Attn_"+ str(NLP.architecture)+"_el"+str(NLP.encoderLayers)+"_dl"+str(NLP.decoderLayers)+"_embedSize"+str(NLP.embeddingSize)+"_hs"+str(NLP.hiddenSize)+"_dropout"+str(NLP.dropout)+"_bs"+str(NLP.batchSize)+"_"+str(NLP.optimizer)
+
+#=========================================================================================================================================================#
+# Preprocessing Data  
+  def getInputData(filename):
+    hiText,enText = [],[]
+    with codecs.open(filename, encoding='utf-8') as f:
+      for row in f:
+        hiWord, enWord, _ = row.split("\t")
+        hiWord = NLP.SOS + hiWord + NLP.EOS
+        hiText.append(hiWord)
+        enText.append(enWord)  
+    return enText,hiText
+
+  x_Train,y_Train = getInputData('train.txt')
+  xValid,yValid = getInputData('valid.txt')
+  xTest,yTest = getInputData('test.txt')
+#=========================================================================================================================================================#
+# Shuffling Train Data
+  temp = list(zip(x_Train, y_Train))
+  random.shuffle(temp)
+  xTrain, yTrain = zip(*temp)
+
+  NLP.xTrain = xTrain
+  NLP.yTrain = yTrain
+  NLP.xValid = xValid
+  NLP.yValid = yValid
+  NLP.xTest = xTest
+  NLP.yTest = yTest
+
+  NLP.getDictionary()
+  NLP.word2vec('train')
+  trainEncoderInput,trainDecoderInput,trainDecoderOutput = NLP.encoderInput,NLP.decoderInput,NLP.decoderOutput
+  NLP.word2vec('valid')
+  validEncoderInput,validDecoderInput,validDecoderOutput = NLP.encoderInput,NLP.decoderInput,NLP.decoderOutput
+  NLP.word2vec('test')
+  testEncoderInput,testDecoderInput,testDecoderOutput = NLP.encoderInput,NLP.decoderInput,NLP.decoderOutput
+  model = NLP.encoderDecoderModels()
+
+#=========================================================================================================================================================#
+# Training model
+  model.compile(optimizer=NLP.optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
+  callback = EarlyStopping(monitor='val_loss', patience=5)
+  model.fit([trainEncoderInput, trainDecoderInput],
+      trainDecoderOutput,
+      batch_size=NLP.batchSize,
+      epochs=NLP.epochs,
+      validation_data=([validEncoderInput, validDecoderInput],validDecoderOutput),
+      callbacks=[callback,WandbCallback()]
+  )
+#=========================================================================================================================================================#
+# Inference Model 
+  def inferenceModel(model):
+    encoderInputs = model.input[0]
+    if (NLP.architecture=='LSTM'):
+        encoderOutputs, state_h_enc, state_c_enc = model.layers[NLP.encoderLayers+3].output
+        encoderStates = [state_h_enc, state_c_enc]
+    else:
+        encoderOutputs, state_h_enc = model.layers[NLP.encoderLayers+3].output
+        encoderStates = [state_h_enc]
+    encoder_model = Model(encoderInputs, [encoderOutputs, encoderStates])
+
+    decoderInputs = model.input[1]
+
+    attEncoderOutput = Input(shape=(NLP.inTrainMaxlen,NLP.hiddenSize,), name="Encoder Output for Attention")
+    decoderInputEmbedding = model.layers[NLP.encoderLayers+2](decoderInputs)
+    decoderOutputs = decoderInputEmbedding
+    inStatesDecoder = []
+    outStatesDecoder = []
+    
+    decoderStartingLayer = NLP.encoderLayers+4
+    attnNumber = decoderStartingLayer+NLP.decoderLayers
+    for i in range(NLP.decoderLayers):
+      
+      if (NLP.architecture=='LSTM'):
+
+          state_h_dec = Input(shape=(NLP.hiddenSize,))
+          state_c_dec = Input(shape=(NLP.hiddenSize,))
+          inStatesDecoder.append([state_h_dec, state_c_dec])          
+          decoderOutputs,state_h_dec,state_c_dec = model.layers[decoderStartingLayer+i](decoderOutputs, initial_state = inStatesDecoder[-1])
+          outStatesDecoder.append([state_h_dec, state_c_dec])
+      
+      else:
+          state_h_dec = Input(shape=(NLP.hiddenSize,))
+          inStatesDecoder.append([state_h_dec])
+          decoderOutputs,state_h_dec= model.layers[decoderStartingLayer+i](decoderOutputs, initial_state = inStatesDecoder[i])
+          outStatesDecoder.append([state_h_dec])
+      
+    if NLP.isAttention:
+      attContext, attWeights = model.layers[attnNumber]([decoderOutputs, attEncoderOutput], return_attention_scores=True)
+      decoderOutputs = model.layers[attnNumber+1]([decoderOutputs, attContext])
+      attnNumber += 2
+    
+    # Making Dropout and Dense layer
+    decoderOutputs = model.layers[attnNumber](decoderOutputs, training=False)
+    decoderOutputs = model.layers[attnNumber+1](decoderOutputs)
+
+    if NLP.isAttention:
+      decoder_model = Model([decoderInputs, attEncoderOutput, inStatesDecoder],[decoderOutputs, outStatesDecoder, attWeights])
+    else:
+      decoder_model = Model([decoderInputs, inStatesDecoder], [decoderOutputs, outStatesDecoder])
+
+    return encoder_model, decoder_model
