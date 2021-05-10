@@ -1,58 +1,72 @@
+# Importing Libraries
 import tensorflow as tf
-
-physical_devices = tf.config.experimental.list_physical_devices('GPU')
-# assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
-# config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
-from tensorflow.keras import  models, optimizers, layers, activations
+from tensorflow import keras
+from tensorflow.keras import  models, optimizers, layers, activations,callbacks,optimizers
+from tensorflow.keras.optimizers import Adam,Nadam
 from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import Input, LSTM, SimpleRNN, GRU, Dense, Embedding,RNN
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.layers import Input, LSTM, SimpleRNN, GRU, Dense, Embedding,AdditiveAttention,Dropout,Concatenate
 import matplotlib.pyplot as plt
 import numpy as np
+import random
 import codecs
+!pip install pybind11
+!pip install fastwer
+import fastwer
 %pip install wandb -q
 import wandb
 from wandb.keras import WandbCallback
-#==================================================================================================#
-import wandb
-wandb.login()
-default_configs = {"architecture" : "LSTM",
-                   "batchSize" : 32,
-                   "dropout" : 0.2,
-                   "epochs" : 10,
-                   "encoderLayers" : 2,
-                   "decoderLayers" : 1,
-                   "hiddenSize" : 64,
-                   "embeddingSize" : 32}
-run = wandb.init(project='CS6910_assignment3_v1', config=default_configs)
-config = wandb.config
 
-#==================================================================================================#
-
-class NLP:
+#======================================================================================#
+def train():
+  default_configs = {
+    "embedding_size": 16, 
+    "hidden_size": 32, 
+    "encoder_layers": 1, 
+    "decoder_layers": 1, 
+    "architecture": "LSTM",
+    "isAttention": True,
+    "dropout": 0, 
+    "batch_size": 32,
+    "optimizer" : "Adam",
+    "epochs" : 50
+    }
+  
+  run = wandb.init(project='CS6910_Assignment_3', config=default_configs,settings=wandb.Settings(start_method="fork"))
+  config = wandb.config
+  
+#=========================================================================================================================================================#
+# Creating Classs
+  class NLP:
     xTrain = []
     yTrain = []
     xValid = []
     yValid = []
     xTest = []
     yTest =[]
-    
+
+#=========================================================================================================================================================#
+# Initialisation    
     def __init__(self):
 
+        self.SOS = '<'
+        self.EOS = '>'
         self.trainingExamples = len(self.xTrain)
         self.validExamples = len(self.xValid)
-
+        self.batchSize = config.batch_size
         self.architecture = config.architecture
-        self.batchSize = config.batchSize
+        
         self.dropout = config.dropout
         self.epochs = config.epochs
 
-        self.encoderLayers = config.encoderLayers
-        self.decoderLayers = config.decoderLayers
-        self.hiddenSize = config.hiddenSize
-        self.embeddingSize = config.embeddingSize
-
-
+        self.isAttention = config.isAttention
+        self.encoderLayers = config.encoder_layers
+        self.decoderLayers = config.decoder_layers
+        self.hiddenSize = config.hidden_size
+        self.embeddingSize = config.embedding_size
+        self.optimizer = config.optimizer
+#=========================================================================================================================================================#
+# Preparing charater level dictionary for input and output
     def getDictionary(self):
         
         enText = self.xTrain
@@ -75,6 +89,8 @@ class NLP:
         self.inTrainMaxlen = len(max(self.xTrain, key=len))
         self.outTrainMaxlen = len(max(self.yTrain, key=len))
 
+#=========================================================================================================================================================#
+# Vectorizing word based on character level tokens
     def word2vec(self,dataset):
         
         if (dataset == 'train'):
@@ -90,7 +106,7 @@ class NLP:
 
         
         self.encoderInput = np.zeros((len(enText), self.inTrainMaxlen), dtype="float32")
-        self.decoderInput = np.zeros((len(hiText), self.outTrainMaxlen, self.vocabSize_hi), dtype="float32")
+        self.decoderInput = np.zeros((len(hiText), self.outTrainMaxlen), dtype="float32")
         self.decoderOutput = np.zeros((len(hiText), self.outTrainMaxlen, self.vocabSize_hi), dtype="float32")
 
         for i, (x, y) in enumerate(zip(enText, hiText)):
@@ -100,15 +116,15 @@ class NLP:
             self.encoderInput[i, t + 1 :] = self.char2int_en[" "]
 
             for t, char in enumerate(y):
-                # decoder_target_data is ahead of decoder_input_data by one timestep
-                self.decoderInput[i, t, self.char2int_hi[char]] = 1.0
+                self.decoderInput[i, t] = self.char2int_hi[char]
                 if t > 0:
                     self.decoderOutput[i, t - 1, self.char2int_hi[char]] = 1.0
                     
-            self.decoderInput[i, t + 1 :, self.char2int_hi[" "]] = 1.0
+            self.decoderInput[i, t + 1 :] = self.char2int_hi[" "]
             self.decoderOutput[i, t:, self.char2int_hi[" "]] = 1.0  
 
-
+#=========================================================================================================================================================#
+# Passing architecture type
     def toggleFunc(self):
         if self.architecture == 'GRU':
             return GRU
