@@ -299,3 +299,119 @@ def train():
       decoder_model = Model([decoderInputs, inStatesDecoder], [decoderOutputs, outStatesDecoder])
 
     return encoder_model, decoder_model
+
+#=========================================================================================================================================================#
+# Decoding test sequences
+  def decodeSequence(inputSeq):
+
+    encoderOutputs, encoderStates= encoder_model.predict(inputSeq)
+    if (NLP.architecture == 'LSTM'):
+      initialState = [[np.zeros((1,NLP.hiddenSize))], [np.zeros((1,NLP.hiddenSize))]]
+    else:
+      initialState = [np.zeros((1,NLP.hiddenSize))]
+
+    decoderStates = [encoderStates] + [initialState]*(NLP.decoderLayers-1)
+    outputSeq = np.array(NLP.char2int_hi['<'],ndmin=2)
+
+    decodedSeq = ""
+    attWeightsList = []
+    decodedChar = ""
+    while not (decodedChar == NLP.EOS or (len(decodedSeq) > NLP.outTrainMaxlen)):
+      if NLP.isAttention:
+        decodedTokens, decoderStates, attWeights = decoder_model.predict([outputSeq, encoderOutputs, decoderStates])
+        attWeightsList.append(attWeights)
+      else:
+        decodedTokens, decoderStates = decoder_model.predict([outputSeq, decoderStates])
+
+      decodedTokenNumber = np.argmax(decodedTokens[0, -1, :])
+      decodedChar = NLP.int2char_hi[decodedTokenNumber]
+      decodedSeq += decodedChar
+      outputSeq[0,0] = decodedTokenNumber
+    if NLP.isAttention:
+      return decodedSeq, attWeightsList
+    else:
+      return decodedSeq
+
+#=========================================================================================================================================================#
+# Predicting test data output after decoding sequences
+  def testDataPrediction(testEncoderInput):
+    ref = []
+    hypo = [] 
+    for seqIndex in range(len(testEncoderInput)):
+
+        inputSeq = (testEncoderInput[seqIndex : seqIndex + 1]).reshape(1,NLP.inTrainMaxlen)
+        if NLP.isAttention:
+          decodedSeq, _ = decodeSequence(inputSeq)
+        else:
+          decodedSeq = decodeSequence(inputSeq)
+        decodedLabel = decodedSeq.replace('>','')
+        hypo.append(decodedLabel)
+
+        referenceSeq = yTest[seqIndex]
+        temp1 = referenceSeq.replace('>','')
+        referenceLabel = temp1.replace('<','')
+
+        if ((seqIndex%50) == 0 ):
+            print("-----")
+            print("Input Sequence:", xTest[seqIndex])
+            print("Decoded Sequence:", decodedLabel)
+            print("Reference Sequence:", referenceLabel)
+        
+        ref.append(referenceLabel)
+    return ref,hypo
+
+#=========================================================================================================================================================#
+# Computing Word Error rate and Character Error rate
+  def computeCerWer(ref,hypo):
+    
+    WER = fastwer.score(hypo, ref)
+    print('WER : ',WER)
+    CER = fastwer.score(hypo, ref, char_level=True)
+    print('CER : ', CER)
+    return WER, CER
+
+#=========================================================================================================================================================#
+# Joining full pipeline
+  encoder_model,decoder_model = inferenceModel(model)
+  ref,hypo = testDataPrediction(testEncoderInput)
+  WER,CER = computeCerWer(ref,hypo)
+
+#=========================================================================================================================================================#
+# Logging into wandb
+  wandb.log({'Char Accuracy':(100-CER),
+            'Word Accuracy':(100-WER)})
+
+#=========================================================================================================================================================#
+# Config file for sweep
+sweep_config = {
+    'method': 'bayes', #grid, random
+    'metric': {
+      'name': 'char_accuracy',
+      'goal': 'maximize'   
+    },
+    'parameters': {
+        'epochs': {
+            'values': [50]
+        },
+        'batch_size':{
+            'values':[32,64]
+        },
+        'Embedding_size': {
+            'values': [16,32,64,128,256]
+        },
+        'encoder_layers': {
+            'values': [1,2,3]
+        },'decoder_layers':{
+            'values': [1,2,3]
+        },
+        'hidden_size': {
+            'values': [16,32,64,128,256]
+        },'architecture':{
+            'values': ['RNN','LSTM','GRU']
+        },'optimizer':{
+            'values': ['Adam','Nadam']
+        },'dropout': {
+            'values': [0,0.05,0.1,0.2]
+        }
+    }
+}
