@@ -135,199 +135,59 @@ def train():
         else:
             print('Please enter correct architecture')
             exit()
+ 
 
+
+#=========================================================================================================================================================#
+# Defining Model architecture using Encoder and Decoder layers
     def encoderDecoderModels(self):
 
-        if (self.architecture == 'LSTM'):
-
-            encoderInputs = Input(shape=(None,))
-            encoderEmbedding = layers.Embedding(input_dim=self.vocabSize_en, output_dim=self.embeddingSize)(encoderInputs)
-            tempEncoder = encoderEmbedding
-            
-            for i in range(self.encoderLayers-1):
-                tempEncoder = self.toggleFunc()(self.hiddenSize, return_state=True, return_sequences=True,dropout=self.dropout,name = 'encoderRNN'+str(i))(tempEncoder)
-            encoderOutputs, state_h, state_c = self.toggleFunc()(self.hiddenSize, return_state=True, dropout=self.dropout,name = 'encoderRNNfinal')(tempEncoder)
-            encoderStates = [state_h, state_c]
+        encoderInputs = Input(shape=(None,),name = 'encoder_input')
+        encoderEmbedding = layers.Embedding(input_dim=self.vocabSize_en, output_dim=self.embeddingSize,mask_zero=True,name = 'encoder_embedding')(encoderInputs) 
         
-        else:
-            encoderInputs = Input(shape=(None,))
-            encoderEmbedding = layers.Embedding(input_dim=self.vocabSize_en, output_dim=self.embeddingSize)(encoderInputs)
-            tempEncoder = encoderEmbedding
-            
-            for i in range(self.encoderLayers-1):
-                tempEncoder = self.toggleFunc()(self.hiddenSize, return_state=True, return_sequences=True,dropout=self.dropout,name ='encoderRNN'+str(i))(tempEncoder)
-            encoderOutputs, state_h = self.toggleFunc()(self.hiddenSize, return_state=True, dropout=self.dropout,name ='encoderRNNfinal')(tempEncoder)
-            encoderStates = [state_h]
+        print(self.architecture)
+        if (self.architecture == 'LSTM'):
+            for i in range(self.encoderLayers):
+              encoderEmbedding, state_h, state_c = self.toggleFunc()(self.hiddenSize, return_state=True,return_sequences=True, dropout=self.dropout,name ='encoder_layer'+str(i))(encoderEmbedding)
+              encoderStates = [state_h, state_c]
+        
+        else:     
+            for i in range(self.encoderLayers):
+              encoderEmbedding, state_h = self.toggleFunc()(self.hiddenSize, return_state=True,return_sequences=True, dropout=self.dropout,name ='encoder_layer'+str(i))(encoderEmbedding)
+              encoderStates = [state_h]   
 
-        decoderInputs = Input(shape=(None,self.vocabSize_hi))
-        tempDecoder = decoderInputs
-        tempDecoder = self.toggleFunc()(self.hiddenSize, return_sequences=True, return_state=True,dropout=self.dropout)(tempDecoder,initial_state=encoderStates)
-        for i in range(self.decoderLayers-1):
-            tempDecoder = self.toggleFunc()(self.hiddenSize, return_sequences=True, return_state=True,dropout=self.dropout)(tempDecoder)
+        encoderOutputs = encoderEmbedding
+
+      #=====================================================================================================================================================#
+      # Defining Decoder layer  
+        decoderInputs = Input(shape=(None,),name = 'decoder_input')
+        decoderEmbedding = layers.Embedding(input_dim=self.vocabSize_hi, output_dim=self.embeddingSize,name = 'decoder_embedding')(decoderInputs)
         
         if (self.architecture == 'LSTM'):
-            decoderOutputs, _, _ = tempDecoder
+          for i in range(self.decoderLayers):
+            if (i == 0):
+              decoderEmbedding,decoder_state_h,decoder_state_c = self.toggleFunc()(self.hiddenSize, return_sequences=True, return_state=True,dropout=self.dropout,name ='decoder_layer'+str(i))(decoderEmbedding,initial_state=encoderStates)
+            else:
+              decoderEmbedding,decoder_state_h,decoder_state_c = self.toggleFunc()(self.hiddenSize, return_sequences=True, return_state=True,dropout=self.dropout,name ='decoder_layer'+str(i))(decoderEmbedding,initial_state=None)      
+            decoderStates = [decoder_state_h, decoder_state_c]  
         else:
-            decoderOutputs, _ = tempDecoder
+          for i in range(self.decoderLayers):
+            if (i == 0):
+              decoderEmbedding,decoder_state_h = self.toggleFunc()(self.hiddenSize, return_sequences=True, return_state=True,dropout=self.dropout,name ='decoder_layer'+str(i))(decoderEmbedding,initial_state=encoderStates)
+            else:
+              decoderEmbedding,decoder_state_h= self.toggleFunc()(self.hiddenSize, return_sequences=True, return_state=True,dropout=self.dropout,name ='decoder_layer'+str(i))(decoderEmbedding,initial_state=None)      
+            decoderStates = [decoder_state_h] 
 
-        decoderDense = Dense(self.vocabSize_hi, activation="softmax")
+        decoderOutputs = decoderEmbedding
+
+        if self.isAttention:
+          attContext, attWeights = AdditiveAttention(name = 'Attention')([decoderOutputs, encoderOutputs],return_attention_scores=True)
+          decoderOutputs = Concatenate(name = 'Concatenate')([decoderOutputs, attContext])
+        
+        decoderOutputs = Dropout(self.dropout)(decoderOutputs,training = True)
+        decoderDense = Dense(self.vocabSize_hi, activation="softmax",name = 'decoder_dense')
         decoderOutputs = decoderDense(decoderOutputs)
-
-        # decoder_attention = attention.SequenceAttention(similarity="additive", name="attention")
-        # decoderOutputs = decoder_attention([decoderOutputs, encoderOutputs])
+        
         model = Model([encoderInputs, decoderInputs], decoderOutputs)
-
         return model
-#====================================================================================================================#
-def getInputData(filename):
-  hiText,enText = [],[]
-  with codecs.open(filename, encoding='utf-8') as f:
-    for row in f:
-      hiWord, enWord, _ = row.split("\t")
-      hiWord = "<" + hiWord + ">"
-      hiText.append(hiWord)
-      enText.append(enWord)
-  
-  return enText,hiText
-  
-xTrain,yTrain = getInputData('train.txt')
-xValid,yValid = getInputData('valid.txt')
-xTest,yTest = getInputData('test.txt')
-NLP = NLP()
-
-NLP.xTrain = xTrain
-NLP.yTrain = yTrain
-NLP.xValid = xValid
-NLP.yValid = yValid
-NLP.xTest = xTest
-NLP.yTest = yTest
-#====================================================================================================================#
-
-NLP.getDictionary()
-NLP.word2vec('train')
-trainEncoderInput,trainDecoderInput,trainDecoderOutput = NLP.encoderInput,NLP.decoderInput,NLP.decoderOutput
-model = NLP.encoderDecoderModels()
-NLP.word2vec('valid')
-validEncoderInput,validDecoderInput,validDecoderOutput = NLP.encoderInput,NLP.decoderInput,NLP.decoderOutput
-NLP.word2vec('test')
-testEncoderInput,_,_ = NLP.encoderInput,NLP.decoderInput,NLP.decoderOutput
-
-#====================================================================================================================#
-
-model.compile(optimizer="rmsprop", loss="categorical_crossentropy", metrics=["accuracy"])
-model.fit([trainEncoderInput, trainDecoderInput],
-    trainDecoderOutput,
-    batch_size=NLP.batchSize,
-    epochs=NLP.epochs,
-    validation_data=([validEncoderInput, validDecoderInput],validDecoderOutput),
-    callbacks=[WandbCallback()]
-)
-
-#====================================================================================================================#
-
-encoderInputs = model.input[0]  # input_1
-if (NLP.architecture=='LSTM'):
-    encoderOutputs, state_h_enc, state_c_enc = model.layers[NLP.encoderLayers+2].output  # lstm_1
-    encoderStates = [state_h_enc, state_c_enc]
-else:
-    encoderOutputs, state_h_enc = model.layers[NLP.encoderLayers+2].output  # lstm_1
-    encoderStates = [state_h_enc]
-encoder_model_1 = Model(encoderInputs, encoderStates)
-
-decoderInputs = model.input[1]  # input_2
-if (NLP.architecture=='LSTM'):
-    decoder_state_input_h = Input(shape=(NLP.hiddenSize,))
-    decoder_state_input_c = Input(shape=(NLP.hiddenSize,))
-    decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-else:
-    decoder_state_input_h = Input(shape=(NLP.hiddenSize,))
-    decoder_states_inputs = [decoder_state_input_h]
-
-
-decoderStartingLayer = NLP.encoderLayers+3
-for i in range(NLP.decoderLayers):
-    decodingCell = model.layers[decoderStartingLayer+i]
-    if (i==0):
-        decoderMemory = decodingCell(decoderInputs, initial_state=decoder_states_inputs)
-    else :
-        decoderMemory = decodingCell(decoderMemory)
-
-if (NLP.architecture=='LSTM'):    
-    decoderOutputs, state_h_dec, state_c_dec = decoderMemory
-    decoderStates = [state_h_dec, state_c_dec]
-else:
-    decoderOutputs, state_h_dec = decoderMemory
-    decoderStates = [state_h_dec]
-            
-decoderDense = model.layers[decoderStartingLayer + NLP.decoderLayers]
-decoderOutputs = decoderDense(decoderOutputs)
-decoder_model_1 = Model([decoderInputs] + decoder_states_inputs, [decoderOutputs] + decoderStates)
-
-#====================================================================================================================#
-
-def decode_sequence(input_seq):
-    # Encode the input as state vectors.
-    states_value = encoder_model_1.predict(input_seq)
-
-    # Generate empty target sequence of length 1.
-    target_seq = np.zeros((1, 1, NLP.vocabSize_hi))
-    # Populate the first character of target sequence with the start character.
-    target_seq[0, 0, NLP.char2int_hi["<"]] = 1.0
-
-    # Sampling loop for a batch of sequences
-    # (to simplify, here we assume a batch of size 1).
-    stop_condition = False
-    decoded_sentence = ""
-    while not stop_condition:
-        output_tokens, h, c = decoder_model_1.predict([target_seq] + states_value)
-        # print(output_tokens.shape)
-
-        # Sample a token
-        sampled_token_index = np.argmax(output_tokens[0, -1, :])
-        sampled_char = NLP.int2char_hi[sampled_token_index]
-        decoded_sentence += sampled_char
-
-        # Exit condition: either hit max length
-        # or find stop character.
-        if sampled_char == ">" or len(decoded_sentence) > NLP.outTrainMaxlen:
-            stop_condition = True
-
-        # Update the target sequence (of length 1).
-        target_seq = np.zeros((1, 1, NLP.vocabSize_hi))
-        target_seq[0, 0, sampled_token_index] = 1.0
-
-        # Update states
-        states_value = [h, c]
-    return decoded_sentence
-    
-    #====================================================================================================================#
-    
-    ref = []
-hypo = []
-for seq_index in range(100):
-    # Take one sequence (part of the training set)
-    # for trying out decoding.
-    input_seq = testEncoderInput[seq_index : seq_index + 1]
-    decoded_sentence = decode_sequence(input_seq)
-    decoded_label = decoded_sentence.replace('>','')
-    print("-")
-    print("Input sentence:", xTest[seq_index])
-    print("Decoded sentence:", decoded_label)
-    hypo.append(decoded_label) 
-    reference_sentence = yTest[seq_index]
-    temp1 = reference_sentence.replace('>','')
-    reference_label = temp1.replace('<','')
-    print("Reference sentence:", reference_label)
-    
-    ref.append(reference_label)
-
-print('hypo: ', hypo)
-print('ref: ', ref)
-
-#====================================================================================================================#
-
-import fastwer
-# # Corpus-Level WER: 40.0
-print(fastwer.score(hypo, ref))
-# # Corpus-Level CER: 25.5814
-print(fastwer.score(hypo, ref, char_level=True))
+#=========================================================================================================================================================#
