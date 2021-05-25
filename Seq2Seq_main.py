@@ -435,3 +435,131 @@ for i in range(number):
   print("Refernce Word: ", referenceLabel)
 #=========================================================================================================================================================#
 # plotting attention heatmap
+
+  len_input = len(random_word)
+  attnWeights = attnWeights[0:len(attnWeights)-1]
+  attnWeights = np.array([ element[0,0,:len_input] for element in attnWeights ])
+
+  font_prop = FontProperties(fname="Akshar Unicode Regular.ttf", size=25)
+
+  fig, ax = plt.subplots()
+  en_char = [ch for ch in random_word]
+  hi_char = [ch for ch in decodedLabel]
+  plt.imshow(attnWeights, cmap='viridis', interpolation='bilinear')
+  ax.set_xticks(range(len(random_word)))
+  ax.set_yticks(range(len(decodedLabel)))
+  ax.set_xticklabels(en_char,size = 25)
+  ax.set_yticklabels(hi_char, fontproperties=font_prop)
+  plt.colorbar()
+  plt.show()
+  plt.savefig('%s.png' %(random_word))
+
+# Tried Connectivity question but not not completed 
+'''
+ # get html element
+def cstr(s, color='black'):
+	if s == ' ':
+		return "<text style=color:#000;padding-left:10px;background-color:{}> </text>".format(color, s)
+	else:
+		return "<text style=color:#000;background-color:{}>{} </text>".format(color, s)
+	
+# print html
+def print_color(t):
+	display(html_print(''.join([cstr(ti, color=ci) for ti,ci in t])))
+
+# get appropriate color for value
+def get_clr(value):
+	colors = ['#85c2e1', '#89c4e2', '#95cae5', '#99cce6', '#a1d0e8'
+		'#b2d9ec', '#baddee', '#c2e1f0', '#eff7fb', '#f9e8e8',
+		'#f9e8e8', '#f9d4d4', '#f9bdbd', '#f8a8a8', '#f68f8f',
+		'#f47676', '#f45f5f', '#f34343', '#f33b3b', '#f42e2e']
+	value = int((value * 100) / 5)
+	return colors[value]
+
+# sigmoid function
+def sigmoid(x):
+	z = 1/(1 + np.exp(-x)) 
+	return z
+  
+#Computing Gradient for findding connectivity at each step
+def encoderOutputFromEmbedding(model, x):
+  if (NLP.architecture=='LSTM'):
+      encoderOutputs, state_h_enc, state_c_enc = model.layers[NLP.encoderLayers+3](x)
+      encoderStates = [state_h_enc, state_c_enc]
+  else:
+      encoderOutputs, state_h_enc = model.layers[NLP.encoderLayers+3](x)
+      encoderStates = [state_h_enc]
+  return encoderOutputs,encoderStates
+
+def DecoderOutput(model, x, hidden, enc_out=None):
+  decoderInputEmbedding = model.layers[NLP.encoderLayers+2](x)
+  decoderOutputs = decoderInputEmbedding
+  inStatesDecoder = []
+  outStatesDecoder = []
+  
+  decoderStartingLayer = NLP.encoderLayers+4
+  attnNumber = decoderStartingLayer+NLP.decoderLayers
+  attEncoderOutput = Input(shape=(NLP.inTrainMaxlen,NLP.hiddenSize,))
+  inStatesDecoder = hidden 
+  for i in range(NLP.decoderLayers):
+  
+    if (NLP.architecture=='LSTM'):
+     
+      decoderOutputs,state_h_dec,state_c_dec = model.layers[decoderStartingLayer+i](decoderOutputs, initial_state = inStatesDecoder[-1])
+      outStatesDecoder.append([state_h_dec, state_c_dec])
+      inStatesDecoder.append([state_h_dec, state_c_dec]) 
+    
+    else:
+
+      decoderOutputs,state_h_dec= model.layers[decoderStartingLayer+i](decoderOutputs, initial_state = inStatesDecoder[-1])
+      outStatesDecoder.append([state_h_dec])
+      inStatesDecoder.append([state_h_dec])
+
+  if NLP.isAttention:
+    attContext, attWeights = model.layers[attnNumber]([decoderOutputs, attEncoderOutput], return_attention_scores=True)
+    decoderOutputs = model.layers[attnNumber+1]([decoderOutputs, attContext])
+
+  
+
+  return decoderOutputs,outStatesDecoder[-1],attWeights
+#=========================================================================================================================================================#
+import tensorflow as tf
+from keras import backend as K
+import math
+from math import log
+# tf.compat.v1.disable_eager_execution()
+
+
+seqIndex = 1
+inputSeq = (testEncoderInput[seqIndex : seqIndex + 1]).reshape(1,NLP.inTrainMaxlen)
+decodedChar = ""
+decodedSeq = ""
+gradient_list =[]
+if (NLP.architecture == 'LSTM'):
+  initialState = [[np.zeros((1,NLP.hiddenSize))], [np.zeros((1,NLP.hiddenSize))]]
+else:
+  initialState = [np.zeros((1,NLP.hiddenSize))]
+encoderEmbedding = model.layers[2](inputSeq)
+# embed_array = encoderEmbedding.numpy()
+# print(type(embed_array))
+# encoderEmbedding = tf.convert_to_tensor(embed_array)
+with tf.GradientTape(persistent=True, watch_accessed_variables =False) as tape:
+  tape.watch(encoderEmbedding)
+  encOut, encState = encoderOutputFromEmbedding(model, encoderEmbedding)
+
+  decState = [encState] + [initialState]*(NLP.decoderLayers-1)
+  decoderInputs = np.array(NLP.char2int_hi['<'],ndmin=2)
+
+  while not (decodedChar == NLP.EOS or (len(decodedSeq) > NLP.outTrainMaxlen)):
+    print('entered')
+    decOut, decState,_ = DecoderOutput(model, decoderInputs, dec_state, enc_out)
+    decOut = tf.make_tensor_proto(decOut)
+    decoderOutputs_lstm = model.layers[-2](decOut, training=False)
+    decodeTokens = model.layers[-1](decoderOutputs_lstm)
+    
+    gradient_list.append(tape.gradient(decOut, encoderEmbedding))
+    decodeTokens = np.argmax(decodeTokens[0, -1, :])
+    decodedChar = NLP.int2char_hi[decodeTokens]
+    decodedSeq += decodedChar
+    outputSeq[0,0] = decodeTokens
+'''
