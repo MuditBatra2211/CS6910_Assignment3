@@ -12,8 +12,9 @@ Training Examples: 'train.txt'<br/>
 Validation Examples: 'valid.txt'<br/>
 Test Examples: 'test.txt'<br/>
 
-To replicate the results download all the files along with Dataset.<br/><br/>
-If you want to replicate results for particular configuration then no need to go with "Seq2Seq_main.py" file.We have seperatley defined all the hyperparameter
+To replicate the results download all the files along with Dataset.<br/>
+"Akshar Unicode Regular.ttf" file is used to decode hindi characters and visualise it.<br/><br/>
+If you want to replicate results for particular configuration select "Seq2Seq_main.py" file.We have seperatley defined all the hyperparameter
 configuration in the "init block" so you can directly change the parameters in the "init block" using below description:
 
 ```
@@ -42,10 +43,10 @@ Note: To run Attention based models, keep self.isAttention = True
 
 ### "Results"
 In this folder all results have been submitted.<br/>
-1. Attention best model.txt : Results of all test Examples decoded by the Attentionbased best model.
-2. Without attention best model.txt : Results of all test Examples decoded by the test model withou attention
-3. Beam Search Results without attention.csv : Results of all test Examples decoded by the best model without attention with Beam width of 3
-4. Attention Heatmap.jpg : Attention heatmap results on best atten based model
+1. Attention best model.txt : Results of all test Examples decoded by the Attention-based best model.
+2. Without attention best model.txt : Results of all test Examples decoded by the test model without attention.
+3. Beam Search Results without attention.csv : Results of all test Examples decoded by the best model without attention with Beam width of 3.
+4. Attention Heatmap.jpg : Attention heatmap results on best Attention-based model.
 
-### [Check out our project workspace]()
-### [Check out project detailed report]()
+### [Check out our project workspace](https://wandb.ai/vrunda/CS6910_Assignment3_NLP?workspace=user-vrunda)
+### [Check out project detailed report](https://wandb.ai/vrunda/CS6910_Assignment3_NLP/reports/CS6910-Assignment-3--Vmlldzo3MjAyOTg)
