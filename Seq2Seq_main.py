@@ -321,7 +321,37 @@ def decodeSequence(beam_search,inputSeq):
 
     decodedSeq += decodedChar
     outputSeq[0,0] = decodedTokenNumber
+#=========================================================================================================================================================#
+# To predict the all words in given test data
 
+def testDataPrediction(testEncoderInput):
+  ref = []
+  hypo = [] 
+  beam_search = NLP.beam_search
+ 
+  for seqIndex in range(10):
+
+    referenceSeq = yTest[seqIndex]
+    temp1 = referenceSeq.replace('>','')
+    referenceLabel = temp1.replace('<','')
+    
+    inputSeq = (testEncoderInput[seqIndex : seqIndex + 1]).reshape(1,NLP.inTrainMaxlen)
+    if NLP.isAttention:
+      decodedSeq, _ = decodeSequence(beam_search,inputSeq)
+    else:
+      decodedSeq = decodeSequence(beam_search,inputSeq)
+    decodedLabel = decodedSeq.replace('>','')
+    hypo.append(decodedLabel)
+
+
+    if ((seqIndex%1) == 0 ):
+        print("-----")
+        print("Input Sequence:", xTest[seqIndex])
+        print("Decoded Sequence:", decodedLabel)
+        print("Reference Sequence:", referenceLabel)
+      
+    ref.append(referenceLabel)
+  return ref,hypo
   for row in decoded_prob:
     all_candidates = list()
     for i in range(len(sequences)):
@@ -346,3 +376,62 @@ def decodeSequence(beam_search,inputSeq):
     return outputSequences[0],attWeightsList
   else:
     return outputSequences[0]
+#=========================================================================================================================================================#
+# Computing Word Error rate and Character Error rate
+def computeCerWer(ref,hypo):
+  
+  WER = fastwer.score(hypo, ref)
+  print('WER : ',WER)
+  CER = fastwer.score(hypo, ref, char_level=True)
+  print('CER : ', CER)
+  return WER, CER
+
+#=========================================================================================================================================================#
+# Joining full pipeline
+encoder_model,decoder_model = inferenceModel(model)
+ref,hypo = testDataPrediction(testEncoderInput)
+WER,CER = computeCerWer(ref,hypo)
+# decoding particular word and plotting it's attention heatmap
+
+def decode_word(word):
+  encoderInput_1 = np.zeros((1, NLP.inTrainMaxlen), dtype="float32")
+  for t, char in enumerate(word):
+      encoderInput_1[0, t] = NLP.char2int_en[char]
+      
+  encoderInput_1[0, t + 1 :] = NLP.char2int_en[" "]
+  return encoderInput_1
+
+number = 2                                   # number of words to decode
+temp = list(zip(xTest, yTest))
+random.shuffle(temp)          
+xTest, yTest= zip(*temp)
+
+random_word_list = []
+decodedLabel_list = []
+referenceLabel_list =[]
+
+for i in range(number):
+  random_word = xTest[i]
+  xx_attn = decode_word(random_word)
+  inputSeq = xx_attn.reshape(1,NLP.inTrainMaxlen)
+  if NLP.isAttention:
+    decodedSeq, attnWeights = decodeSequence(NLP.beam_search,inputSeq)
+  else:
+    decodedSeq = decodeSequence(inputSeq)
+  decodedLabel = decodedSeq.replace('>','')
+  
+
+  referenceSeq = yTest[i]
+  temp1 = referenceSeq.replace('>','')
+  referenceLabel = temp1.replace('<','')
+
+  decodedLabel_list.append(decodedLabel) 
+  referenceLabel_list.append(referenceLabel)
+  random_word_list.append(random_word)
+
+  print("-----")
+  print("Input Word:",random_word)
+  print("Decoded Word:", decodedLabel)
+  print("Refernce Word: ", referenceLabel)
+#=========================================================================================================================================================#
+# plotting attention heatmap
