@@ -46,7 +46,7 @@ class NLP:
       self.architecture = 'RNN' #['LSTM','RNN','GRU']
       
       self.dropout = 0.2       #[0,0.1,0.2]
-      self.epochs = 1   
+      self.epochs = 50	       #   
       self.beam_search = 1     #[1,3,5]
 
       self.isAttention = True  #[True,False]
